@@ -4,7 +4,20 @@
 ## 1. What I changed
 <!-- Grouped by side (backend / frontend) and task. -->
 
--
+- Fix: onSelect method to reset cr_detail_component selectedId before setting a new value (update cr_details_component content).
+- Task 0: 
+    - **Initial setup:**
+        - install dependencies and start project
+        - Read through the initial project documentation and understand the project structure and flow.
+        - Write End-to-End flow (from UI to BFF_Client and Back_Services).
+- Task 1: 
+    - **Fix transition failure:**
+        - Make sure that the assertTransition function return illegalTransition error by checking the transition against `LEGAL_TRANSITION` list.
+
+    - **Fix UI Test failure:**
+        - Added a read-only function `isReadOnlyPolicy` to `permissions.ts` and used it in the `CrDetailComponent` to determine if the current user had only read access first before checking the CR status at both `canApprove` and `canReject` functions to return false if the user is read-only make the approve button disabled and action reject section can be hidden.
+
+- 
 
 ## 2. Model of the flow (UI ↔ client ↔ service)
 <!-- How an approve/reject travels from the component through the API client into the service and repo,
@@ -41,7 +54,8 @@ client, or component). -->
 -
 
 ## 6. Where I used AI
--
+- Used AI to assist in understanding the project structure and flow.
+- Used AI to write the isReadOnlyPolicy function then inside  `CrDetailComponent` added checks in `canApprove` and `canReject` to apply changes to the UI based on the user's read-only status.
 
 ## 7. What I'd improve with more time
 -

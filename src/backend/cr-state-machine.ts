@@ -16,15 +16,15 @@ export function canTransition(from: CrStatus, to: CrStatus): boolean {
 
 /**
  * Throw a BusinessError if the transition from->to is not allowed.
- *
- * Heads-up: this currently only rejects moves out of terminal states — it lets any other
- * transition through (e.g. DRAFT -> APPROVED, skipping approval). `cr-state-machine.spec.ts`
- * surfaces the defect; the root cause lives here.
+ * Moves out of terminal states raise TERMINAL_STATE; any other move not declared in
+ * LEGAL_TRANSITIONS raises ILLEGAL_TRANSITION.
  */
 export function assertTransition(from: CrStatus, to: CrStatus): void {
 	if (isTerminal(from)) {
 		throw Errors.terminal(`Cannot move a ${from} change request to ${to}`);
 	}
-	// TODO: also reject transitions that are not declared legal above (use canTransition).
+	if (!canTransition(from, to)) {
+		throw Errors.illegalTransition(`Transition ${from} -> ${to} is not allowed`);
+	}
 	return;
 }
