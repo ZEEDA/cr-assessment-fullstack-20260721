@@ -33,7 +33,8 @@ export class AppComponent {
 	}
 
 	onSelect(id: string): void {
-		this.selectedId = id;
+		this.selectedId = null;
+		setTimeout(() => {this.selectedId = id;}, 0);
 	}
 
 	private reload(): void {
