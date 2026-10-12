@@ -11,13 +11,24 @@
         - Read through the initial project documentation and understand the project structure and flow.
         - Write End-to-End flow (from UI to BFF_Client and Back_Services).
 - Task 1: 
-    - **Fix transition failure:**
+    - **Fix transition failure:** (backend)
         - Make sure that the assertTransition function return illegalTransition error by checking the transition against `LEGAL_TRANSITION` list.
 
     - **Fix UI Test failure:**
         - Added a read-only function `isReadOnlyPolicy` to `permissions.ts` and used it in the `CrDetailComponent` to determine if the current user had only read access first before checking the CR status at both `canApprove` and `canReject` functions to return false if the user is read-only make the approve button disabled and action reject section can be hidden.
 
-- 
+- Task 2 (backend, `cr-service.ts`):
+    - **approve:**
+        - Get/check cr from the repository using `getOrThrow`, then check if the current user have the approve policy to proceed
+        - After that call transition function to first check the transition is legal against `LEGAL_TRANSITION`, if the transition is allowed then update cr ( update status to `APPROVED`, add audit entry, increment version), then after that update cr approvals list with the new approval entry.
+        - Finally, save the updated cr to the repository.
+    - **Apply:**
+        - Get/check cr from the repository using `getOrThrow`, then check if the current user have the apply policy to proceed
+        - After that call assertTransition first to check the transition to `APPLIED` is legal before proceeding with budget checks and doing any updates.
+        - Then check if the budget is sufficient before proceeding by checking if there is an additional amount required and if it exceeds the available budget balance.
+        - Update cr totals and call transition to update (status, audit, version).
+        - Update the assigned budget by adding the additional amount to booked and subtracting it from balance.
+        - Finally, save the updated cr to the repository.
 
 ## 2. Model of the flow (UI ↔ client ↔ service)
 <!-- How an approve/reject travels from the component through the API client into the service and repo,
@@ -42,6 +53,11 @@ client, or component). -->
 
 | Invariant | How / where |
 |---|---|
+| Only legal transitions | Backend: `assertTransition` checks `LEGAL_TRANSITIONS`; every service action goes through `transition()` (`apply` also asserts first, before touching the budget). |
+| Terminal states immutable | Backend: `assertTransition` throws `TERMINAL_STATE`; `approve` and `apply` validate before mutating, so a failed call keeps the CR untouched. |
+| Budget never over-spent | Backend: `apply` rejects a positive delta greater than `balance` before any updates. |
+| Every successful action audited | Backend: `transition()` appends the audit entry and version. |
+| Approval recorded only on a successful approve | Backend: `approve` appends to `approvals` after the transition succeeds. |
 
 ## 4. Testing strategy
 <!-- What you tested across the seam (backend + component/DOM) and why; what you skipped given the budget. -->
@@ -51,11 +67,15 @@ client, or component). -->
 ## 5. Assumptions
 <!-- Where the rules or the seam left room for interpretation, the calls you made and why. -->
 
--
+- **CR immutability on failed actions or transitions:** if an action fails due to policy violation or an illegal transition or insufficient budget, the CR remains unchanged.
+- **Budget on apply:** `booked` is set to the CR's new total (`totals.newTotal`) and `balance -= delta`. A positive delta must fit in `balance` (equal is allowed); a negative delta releases budget.
+- **Cr status couldn't be repeated or go back in the workflow:** approving an already-`APPROVED` CR throws `ILLEGAL_TRANSITION` rather than silently returning, or attempting to return to a previous status throws the same error.
+- **Policy scope:** the last part of a policy (`_u`, `_w`, `_o`) is ignored. For example, `cr_a_u` and `cr_a_o` both let the user approve any CR in their org. This matches the existing `isApprover`/`isApplier` helpers.
 
 ## 6. Where I used AI
 - Used AI to assist in understanding the project structure and flow.
 - Used AI to write the isReadOnlyPolicy function then inside  `CrDetailComponent` added checks in `canApprove` and `canReject` to apply changes to the UI based on the user's read-only status.
+- Used AI to assist in writing the approve/apply logic in the backend service.
 
 ## 7. What I'd improve with more time
 -

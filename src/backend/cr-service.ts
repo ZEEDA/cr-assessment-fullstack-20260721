@@ -4,6 +4,7 @@ import { CrStatus, CrAction } from './cr.enums';
 import { assertTransition } from './cr-state-machine';
 import { computeTotals } from './cr-totals';
 import { Errors } from './errors';
+import { round2 } from './money.util';
 
 /**
  * Orchestrates CR actions. `submit`, `sendForApproval`, `reject`, `returnToDraft`, `get`, and `list`
@@ -84,15 +85,42 @@ export class CrService {
 	}
 
 	approve(user: ReqUser, id: string, at: string): ChangeRequest {
-		// TODO: require an approve policy; legal transition PENDING_APPROVAL -> APPROVED;
-		//       record approval + audit.
-		throw Errors.validation('approve not implemented');
+		const cr = this.getOrThrow(user, id);
+		// check if the user has the approver policy before allowing approval
+		if (!this.isApprover(user)) throw Errors.forbidden('Cannot approve');
+		this.transition(cr, CrStatus.APPROVED, CrAction.APPROVE, user.id, at);
+		cr.approvals = [...cr.approvals, { userId: user.id, action: CrAction.APPROVE, at }];
+		return this.repo.save(cr);
 	}
 
+	// Validates everything (status, totals, budget) before mutating the CR or the budget.
 	apply(user: ReqUser, id: string, at: string): ChangeRequest {
-		// TODO: require an apply policy; require APPROVED; recompute totals; check budget covers a
-		//       positive delta else INSUFFICIENT_BUDGET; update budget; set APPLIED; audit.
-		throw Errors.validation('apply not implemented');
+		const cr = this.getOrThrow(user, id);
+		if (!this.isApplier(user)) throw Errors.forbidden('Cannot apply');
+		// Before checking budget, reject transition if not allowed
+		assertTransition(cr.status, CrStatus.APPLIED);
+
+		// Check sufficient budget before applying the change request
+		const agreement = this.agreements.get(cr.agreementId);
+		if (!agreement) throw Errors.notFound('Agreement not found');
+		const totals = computeTotals(agreement, cr);
+		const budget = this.budgets.get(agreement.budgetId);
+		if (!budget) throw Errors.notFound('Budget not found');
+		if (totals.delta > 0 && totals.delta > budget.balance) {
+			throw Errors.insufficientBudget(`Budget ${budget.id} balance ${budget.balance} cannot cover a delta of ${totals.delta}`);
+		}
+
+		cr.totals = totals;
+		this.transition(cr, CrStatus.APPLIED, CrAction.APPLY, user.id, at);
+
+		// Update the budget with the new booked and balance amounts
+		this.budgets.set(budget.id, {
+			...budget,
+			booked: totals.newTotal,
+			balance: round2(budget.balance - totals.delta),
+		});
+
+		return this.repo.save(cr);
 	}
 
 	get(user: ReqUser, id: string): ChangeRequest {
