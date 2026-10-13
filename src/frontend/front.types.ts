@@ -41,3 +41,11 @@ export interface apiChangeRequest {
 	version: number;
 	audit: apiTimelineEntry[];
 }
+
+export type apiErrorCode = 'FORBIDDEN' | 'NOT_FOUND' | 'ILLEGAL_TRANSITION' | 'TERMINAL_STATE' | 'INSUFFICIENT_BUDGET' | 'VALIDATION' | 'NETWORK' | 'UNKNOWN';
+
+/** What a failed client call rejects with: a code the template can branch on and a message it can show. */
+export interface apiError {
+	code: apiErrorCode;
+	message: string;
+}

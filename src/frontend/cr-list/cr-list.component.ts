@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrApiClient } from '../../integration/cr-api-client';
 import { SessionService } from '../../session/session.service';
-import { apiChangeRequest as ChangeRequest } from '../front.types';
+import { apiChangeRequest as ChangeRequest, apiError } from '../front.types';
 import { idle, loading, ViewState } from '../view-state';
 
 /**
@@ -33,7 +33,7 @@ export class CrListComponent implements OnInit {
 			const rows = await this.client.list(this.session.user);
 			this.state = { status: rows.length ? 'loaded' : 'empty', data: rows };
 		} catch (err) {
-			this.state = { status: 'error', data: null, error: (err as Error).message };
+			this.state = { status: 'error', data: null, error: (err as apiError).message };
 		}
 	}
 

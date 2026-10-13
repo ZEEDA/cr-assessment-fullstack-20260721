@@ -70,14 +70,21 @@
         - `apiChangeRequest` and `apiTimelineEntry` (`action`, `byUserId`, `at`, `note`): used by `cr-list` and `cr-detail` instead of the backend `ChangeRequest`/`TimelineEntry`. `apiChangeRequest` mirrors the full backend CR shape (`id`, `orgCode`, `agreementId`, `createdBy`, `title`, `status`, `draftChanges`, `totals`, `approvals`, `version`, `audit`), with `apiLineItem` for the line items in `draftChanges`.
         - `apiCrStatus`: the status as a plain string union (`'DRAFT' | … | 'CANCELLED'`) instead of the backend `CrStatus` enum.
         - The components import them under their old names (`apiChangeRequest as ChangeRequest`), so the component code didn't change.
-        - The client still returns backend objects, and TypeScript checks they fit the frontend types. If the backend adds a status the UI doesn't know, or removes/renames a field the frontend type declares, the typecheck fails where the client's result is assigned (checked by removing `'CANCELLED'` from `apiCrStatus`, and by adding a field the backend doesn't have). A field the backend adds isn't caught: it just isn't visible to the UI until it's added to the frontend type.
+        - The client keeps the backend types, and TypeScript checks its results against the frontend types where the components assign them. If the backend adds a status the UI doesn't know, or removes/renames a field the frontend type declares, the typecheck fails in `cr-list`/`cr-detail` (checked by removing `'CANCELLED'` from `apiCrStatus`, and by adding a field the backend doesn't have). A field the backend adds isn't caught: it just isn't visible to the UI until it's added to the frontend type.
+    - **The client translates errors (`cr-api-client.ts`):**
+        - The client's types come from the backend (`ReqUser`, `ChangeRequest`, `BusinessErrorCode`); it doesn't import the frontend types. The data passes through as the backend returns it (no copying or mapping).
+        - Every failure is turned into a plain `CrApiError` (`code` + `message`, typed from the backend's `BusinessErrorCode` plus `NETWORK`/`UNKNOWN`) in `settle()`, so no backend exception reaches the UI:
+            - A business error (`BusinessError`) → same `code`, and the service's `message` (it's written to be shown).
+            - A network failure (`failNext`) → `NETWORK`, "Network error".
+            - Anything else (a bug, e.g. a `TypeError`) → `UNKNOWN`, "Something went wrong. Please try again.", so internal error text never reaches the screen.
+        - On the UI side, `front.types.ts` has `apiError` (`code` + `message`), mirroring that shape like the other frontend types. `cr-list`, `cr-detail` and the app shell read `(err as apiError).message`, so what's rendered didn't change.
     - **Users load through the client (`cr-api-client.ts`):**
         - New `listUsers()` returns the users keyed by name (`alice`, `mona`, `viewer`, `bob`), the shape the "Acting as" switcher already used. The client keeps `seed.users` from the `buildSeed()` call it already makes.
         - It goes through `settle()` like the other calls, so `latencyMs` and `failNext` apply to it too.
-        - It checks the users before returning them, and rejects with a business error whose message the UI shows as-is:
+        - It checks the users before returning them, and throws a business error that `settle()` turns into a `CrApiError` like any other failure:
             - No users → `Errors.notFound` ("No users are available to act as.").
             - A user missing an `id`, `orgCode` or `policies` array → `Errors.validation`, naming those users. An incomplete user would otherwise crash the permission checks later (`user.policies.includes`).
-            - A network failure still rejects with "Network error".
+            - A network failure rejects with `NETWORK` ("Network error").
     - **The frontend no longer reads users from the backend:**
         - `app.component` no longer imports `users` from `backend/seed`. It loads them with `client.listUsers()` in `ngOnInit`, using the same `ViewState` pattern as `cr-list`. `users`/`userKeys` are now getters over the loaded result, and `switchUser` picks from them.
         - `session.service` no longer imports the seed: `user` starts as `null`, and the app shell sets the default user (`mona`, `DEFAULT_USER_KEY`) once the users are loaded. `??=` keeps a user that is already set.
@@ -104,7 +111,7 @@ and back into the view. -->
 
 - The UI only knows the frontend types in `front.types.ts` (`apiUser`, `apiChangeRequest`, `apiTimelineEntry`, `apiLineItem`, `apiCrStatus`), never the backend's. `CrApiClient` is the only code on the UI side that imports from `src/backend`.
 
-- Inside `CrApiClient` a `Business Error` (eg. `FORBIDDEN`, `ILLIGAL_TRANSITION`, `TERMINAL_STATE`) or a network failure rejects the promise and appears as `actionError` inside `UI`. For `listUsers()`, the client's own checks (no users, incomplete user) reject with a business error whose message the app header shows.
+- Inside `CrApiClient` a `Business Error` (eg. `FORBIDDEN`, `ILLIGAL_TRANSITION`, `TERMINAL_STATE`), a network failure, or an unexpected error is turned into a plain `CrApiError` (`code` + `message`), which the UI reads as its own `apiError`. The promise rejects with that, and its message appears as the load error or `actionError` inside `UI`. For `listUsers()`, the client's own checks (no users, incomplete user) go the same way, and the message appears in the app header.
 
 ## 3. Invariants I keep
 <!-- Which properties your implementation guarantees across the seam, and where each is enforced (backend,
@@ -122,6 +129,7 @@ client, or component). -->
 | A rejection always has a reason | Component: disables Reject without a reason, backend `reject` throws `VALIDATION` error if there is no reason provided. |
 | Loaded CR stays coherent | Component: only replaced by a CR returned from the service; never updated optimistically; kept unchanged on a failed action; one action in flight at a time. |
 | The UI never reaches around the client | Frontend: components, `permissions`, `session` and the app shell import their types from `front.types.ts` and get all data (CRs and users) through `CrApiClient`; nothing on the UI side imports from `src/backend`. |
+| The UI never receives a backend exception | Client: `settle()` turns every failure into a plain `CrApiError`; unexpected errors become a generic `UNKNOWN` message. |
 | Frontend types match what the client returns | Typecheck: the client's backend results are assigned to the frontend types, so a backend change the UI doesn't know about (a new status, or a removed/renamed field the UI declares) fails the build. |
 | No API call without a valid user | Client: `listUsers()` rejects when there are no users or a user is incomplete. App shell: the list and detail panes render only once a session user is set. |
 
@@ -150,7 +158,8 @@ client, or component). -->
 - **One incomplete user fails the whole users load:** `listUsers()` rejects instead of dropping that user, so the problem shows up as "Couldn't load users: …" rather than a user silently missing from the switcher.
 - **Nothing calls the API before a user is set:** the list and detail panes wait for the session user, so no call is ever made without one. If loading the users fails, the user sees the error and Retry, not empty panes.
 - **Frontend types are written by hand, not re-exported from the backend:** `apiChangeRequest` mirrors the backend CR shape, but the UI never imports the backend module or the `CrStatus` enum, only plain types and strings. The cost is a duplicated shape: the typecheck catches an unknown status or a removed/renamed field, while a new backend field only stays hidden from the UI until it's added to the frontend type.
-- **CR errors pass through the client unchanged:** every error the service throws comes from `Errors` with a message, and the UI only ever reads that `message` (nothing reads the error `code`). So the client doesn't re-map them: the service's message is the text the UI shows. `listUsers()` writes its own messages because it has no service behind it. In practice the UI's gating (approver + pending CR, reason required, selection cleared on user switch) stops these errors before a call is made, so only a network failure can actually reach the screen.
+- **Business errors keep the service's message:** every error the service throws comes from `Errors` with a message written to be shown, so the client changes the error's shape (a plain `CrApiError` instead of the backend `BusinessError`) but not its text. Only unexpected errors get a new, generic message. `listUsers()` writes its own messages because it has no service behind it. In practice the UI's gating (approver + pending CR, reason required, selection cleared on user switch) stops business errors before a call is made, so only a network failure can actually reach the screen.
+- **Types only, no copying:** the client returns the backend's objects as they are, typed with the backend types; the UI reads them through its own frontend types. It doesn't build new objects for the UI.
 
 ## 6. Where I used AI
 - Used AI to assist in understanding the project structure and flow.

@@ -2,7 +2,7 @@ import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrApiClient } from '../../integration/cr-api-client';
 import { SessionService } from '../../session/session.service';
-import { apiChangeRequest as ChangeRequest, apiTimelineEntry as TimelineEntry } from '../front.types';
+import { apiChangeRequest as ChangeRequest, apiError, apiTimelineEntry as TimelineEntry } from '../front.types';
 import { idle, loading, ViewState } from '../view-state';
 import { canApprovePolicy } from '../permissions';
 
@@ -38,7 +38,7 @@ export class CrDetailComponent implements OnInit {
 			const detail = await this.client.get(this.session.user, this.id);
 			this.state = { status: 'loaded', data: detail };
 		} catch (err) {
-			this.state = { status: 'error', data: null, error: (err as Error).message };
+			this.state = { status: 'error', data: null, error: (err as apiError).message };
 		}
 	}
 
@@ -115,7 +115,7 @@ export class CrDetailComponent implements OnInit {
 			this.state = { status: 'loaded', data: updated };
 			return true;
 		} catch (err) {
-			if (id === this.id) this.actionError = (err as Error).message;
+			if (id === this.id) this.actionError = (err as apiError).message;
 			return false;
 		} finally {
 			this.submitting = false;

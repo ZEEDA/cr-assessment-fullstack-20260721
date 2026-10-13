@@ -4,7 +4,7 @@ import { CrListComponent } from '../frontend/cr-list/cr-list.component';
 import { CrDetailComponent } from '../frontend/cr-detail/cr-detail.component';
 import { SessionService } from '../session/session.service';
 import { CrApiClient } from '../integration/cr-api-client';
-import { apiUser as ReqUser } from '../frontend/front.types';
+import { apiError, apiUser as ReqUser } from '../frontend/front.types';
 import { idle, loading, ViewState } from '../frontend/view-state';
 
 /** Who the app acts as once the users are loaded (an approver, so the actions are live). */
@@ -43,7 +43,7 @@ export class AppComponent implements OnInit {
 			this.usersState = { status: 'loaded', data: users };
 			this.session.user ??= users[DEFAULT_USER_KEY];
 		} catch (err) {
-			this.usersState = { status: 'error', data: null, error: (err as Error).message };
+			this.usersState = { status: 'error', data: null, error: (err as apiError).message };
 		}
 	}
 
