@@ -1,4 +1,4 @@
-import { ReqUser } from '../backend/cr.types';
+import { apiUser as ReqUser } from './front.types';
 
 export function hasPolicy(user: ReqUser, policy: string): boolean {
 	return !!user && user.policies.includes(policy);

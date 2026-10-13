@@ -1,14 +1,19 @@
 <header class="app-header">
 	<h1>Change Request Approval</h1>
-	<label>
+	<p *ngIf="usersState.status === 'loading'" role="status">Loading users…</p>
+	<p *ngIf="usersState.status === 'error'" role="alert">
+		Couldn't load users: {{ usersState.error }}
+		<button type="button" (click)="loadUsers()">Retry</button>
+	</p>
+	<label *ngIf="usersState.status === 'loaded'">
 		Acting as:
 		<select (change)="switchUser($any($event.target).value)">
-			<option *ngFor="let key of userKeys" [value]="key" [selected]="session.user.id === users[key]?.id">{{ key }}</option>
+			<option *ngFor="let key of userKeys" [value]="key" [selected]="session.user?.id === users[key]?.id">{{ key }}</option>
 		</select>
 	</label>
 </header>
 
-<main class="app-layout" *ngIf="show">
+<main class="app-layout" *ngIf="show && session.user">
 	<app-cr-list [selectedId]="selectedId" (select)="onSelect($event)"></app-cr-list>
 	<app-cr-detail *ngIf="selectedId; else noSelection" [id]="selectedId"></app-cr-detail>
 	<ng-template #noSelection><p class="app-no-selection">Select a change request to see its details.</p></ng-template>

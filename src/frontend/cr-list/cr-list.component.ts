@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { CrApiClient } from '../../integration/cr-api-client';
 import { SessionService } from '../../session/session.service';
-import { ChangeRequest } from '../../backend/cr.types';
+import { apiChangeRequest as ChangeRequest } from '../front.types';
 import { idle, loading, ViewState } from '../view-state';
 
 /**

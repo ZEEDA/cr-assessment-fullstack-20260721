@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { ChangeRequest, ReqUser } from '../backend/cr.types';
 import { CrService } from '../backend/cr-service';
 import { CrRepo } from '../backend/cr-repo';
+import { Errors } from '../backend/errors';
 import { buildSeed } from '../backend/seed';
 
 /**
@@ -16,12 +17,14 @@ export class CrApiClient {
 	latencyMs = 0;
 	failNext = false;
 	private readonly service: CrService;
+	private readonly users: Record<string, ReqUser>;
 
 	constructor() {
 		const seed = buildSeed();
 		const repo = new CrRepo();
 		repo.seed(seed.changeRequests);
 		this.service = new CrService(repo, seed.agreements, seed.budgets);
+		this.users = seed.users;
 	}
 
 	private settle<T>(produce: () => T): Promise<T> {
@@ -41,6 +44,23 @@ export class CrApiClient {
 		});
 	}
 
+	/**
+	 * The seeded demo users, keyed by name (e.g. `viewer`), for the app shell's "Acting as" switcher.
+	 * Rejects with a message the UI can show as-is when there are no users or a user is incomplete
+	 * (an incomplete user would break the permission checks later on).
+	 */
+	listUsers(): Promise<Record<string, ReqUser>> {
+		return this.settle(() => {
+			const users = this.users ?? {};
+			if (Object.keys(users).length === 0) throw Errors.notFound('No users are available to act as.');
+
+			const incomplete = Object.keys(users).filter((key) => !isCompleteUser(users[key]));
+			if (incomplete.length) throw Errors.validation(`Some users are missing an id, org or policies: ${incomplete.join(', ')}.`);
+
+			return users;
+		});
+	}
+
 	list(user: ReqUser): Promise<ChangeRequest[]> {
 		return this.settle(() => this.service.list(user));
 	}
@@ -53,4 +73,8 @@ export class CrApiClient {
 	reject(user: ReqUser, id: string, at: string, note: string): Promise<ChangeRequest> {
 		return this.settle(() => this.service.reject(user, id, at, note));
 	}
+}
+
+function isCompleteUser(user: ReqUser | undefined): boolean {
+	return !!user?.id && !!user.orgCode && Array.isArray(user.policies);
 }
