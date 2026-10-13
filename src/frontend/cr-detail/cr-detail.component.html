@@ -1,4 +1,4 @@
-<section class="cr-detail">
+<section class="cr-detail" [attr.aria-busy]="state.status === 'loading'">
 	<p *ngIf="state.status === 'loading'" class="cr-detail__loading" role="status">Loading…</p>
 
 	<div *ngIf="state.status === 'error'" class="cr-detail__error" role="alert">
@@ -15,16 +15,18 @@
 
 		<section class="cr-timeline">
 			<h3>Timeline</h3>
-			<ol class="cr-timeline__list">
+			<ol *ngIf="timeline.length; else noActivity" class="cr-timeline__list">
 				<li *ngFor="let entry of timeline" class="cr-timeline__entry">
 					<span class="cr-timeline__action">{{ entry.action }}</span>
-					<span class="cr-timeline__by"> by {{ entry.byUserId }}</span>
+					<span class="cr-timeline__by">, by {{ entry.byUserId }}</span>
 					<span *ngIf="entry.note" class="cr-timeline__note">{{ entry.note }}</span>
 				</li>
 			</ol>
+			<ng-template #noActivity><p class="cr-timeline__empty" role="info">No activity recorded yet.</p></ng-template>
 		</section>
 
 		<section class="cr-actions" [attr.aria-busy]="submitting">
+			<p *ngIf="approveRejectActionsUnavailableReason as reason" class="cr-actions__unavailable" role="alert">{{ reason }}</p>
 			<p *ngIf="actionError" class="cr-actions__error" role="alert">{{ actionError }}</p>
 			<p *ngIf="submitting" class="cr-actions__submitting" role="status">Saving…</p>
 
@@ -32,8 +34,8 @@
 				Approve
 			</button>
 
-			<div class="cr-actions__reject" *ngIf="canReject">
-				<label>
+			<div class="cr-actions__reject">
+				<label *ngIf="canReject">
 					Reason for rejection
 					<textarea class="cr-actions__reason" [value]="rejectReason" [disabled]="submitting" (input)="onReasonInput($any($event.target).value)"></textarea>
 				</label>

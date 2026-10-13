@@ -70,6 +70,18 @@ export class CrDetailComponent implements OnInit {
 		return canApprovePolicy(this.session.user) && this.hasPendingApproval(this.detail?.status ?? '');
 	}
 
+	/**
+	 * Why Approve/Reject are disabled, shown next to the actions so a user who can't act knows why.
+	 * The role is checked first: without an approve policy no status would make the actions available.
+	 * Null when the actions are available (or no CR is loaded).
+	 */
+	get approveRejectActionsUnavailableReason(): string | null {
+		if (!this.detail) return null;
+		if (!canApprovePolicy(this.session.user)) return "You can view this change request but don't have permission to approve or reject it.";
+		if (!this.hasPendingApproval(this.detail.status)) return 'Only change requests pending approval can be approved or rejected.';
+		return null;
+	}
+
 	async approve(): Promise<void> {
 		if (!this.canApprove || this.submitting) return;
 		await this.runAction(() => this.client.approve(this.session.user, this.id, new Date().toISOString()));

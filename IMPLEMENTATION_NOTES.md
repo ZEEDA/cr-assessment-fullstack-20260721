@@ -36,6 +36,7 @@
         - The Task 1 check only blocked users holding *only* `cr_r_*` policies. A user like `alice` (`cr_c_u, cr_r_u, cr_u_u`) isn't read-only, so Approve was enabled for her, but the service rejects her with `FORBIDDEN` because she has no approve policy.
         - Both getters now return `canApprovePolicy(user) && status === PENDING_APPROVAL`. `canApprovePolicy` checks for an approve policy (`cr_a_u | cr_a_w | cr_a_o`), the same rule the backend's `isApprover` applies to both `approve` and `reject`. `isReadOnlyPolicy` is now a private helper inside `permissions.ts`, called first by `canApprovePolicy`.
         - The template already used both getters: Approve is disabled when `!canApprove`, and the whole reject section (reason + button) is hidden when `!canReject`.
+        - Changed in Task 4: the Reject button is now always rendered (disabled) and only the reason box is hidden (see below).
     - **approve / reject through `CrApiClient`:**
         - Both go through one private `runAction()` helper:
             - Returns early if the action isn't allowed or a request is already in flight (no double submit on a slow response).
@@ -46,6 +47,22 @@
     - **Reject requires a reason:**
         - UI: the Reject button stays disabled until the trimmed reason is non-empty, and `reject()` checks it again before calling the client. The reason box is bound to `rejectReason` and cleared after a successful reject.
         - Backend (`cr-service.ts`): `reject` now requires `note` and throws `Errors.validation(...)` for a missing or whitespace-only reason. This is the first check, before the CR lookup, the permission check or any change. The trimmed reason is stored on the audit entry. Callers that skip the UI can't reject without a reason either.
+
+- Task 4 (frontend, role-aware UI + states):
+    - **Role-aware actions (`cr-detail.component` + template):**
+        - Approve and Reject are always rendered, and are disabled unless `canApprove`/`canReject` allows them. The reject reason box is only shown when the user can actually reject.
+        - New getter `approveRejectActionsUnavailableReason` explains why the actions are disabled, shown above the buttons:
+            - No approve policy (read-only `viewer`, or `alice` who can create/update but not approve) → "You can view this change request but don't have permission to approve or reject it."
+            - Approver on a CR that isn't `PENDING_APPROVAL` → "Only change requests pending approval can be approved or rejected."
+            - `null` when the actions are available, so nothing is shown.
+        - A read-only user still sees the full CR (header, totals, timeline). Only the actions are off.
+    - **Explicit states (`cr-detail.component` template):**
+        - Loading: "Loading…" (`role="status"`) and `aria-busy` on the page. No CR or actions are rendered.
+        - Load error: the error message with a Retry button (`role="alert"`). No CR or actions are rendered.
+        - Loaded: the CR, plus an explicit "No activity recorded yet." when the timeline is empty instead of an empty list.
+        - Action states from Task 3 stay: "Saving…" while a call is in flight, and `actionError` on failure.
+    - **Selected CR highlighted in the list (`app.component`, `cr-list`):** the app passes `selectedId` into `CrListComponent`. The matching row gets `aria-current="true"`, which the CSS styles (tint, bold, left accent bar). The app owns the selection, so the list and the detail pane always point to the same CR.
+    - **Switching "Acting as" clears the open CR (`app.component`):** `switchUser` sets `selectedId = null`, and a "Select a change request…" placeholder takes the detail pane.
 
 ## 2. Model of the flow (UI ↔ client ↔ service)
 <!-- How an approve/reject travels from the component through the API client into the service and repo,
@@ -76,6 +93,7 @@ client, or component). -->
 | Every successful action audited | Backend: `transition()` appends the audit entry and version. |
 | Approval recorded only on a successful approve | Backend: `approve` appends to `approvals` after the transition succeeds. |
 | UI only offers actions the service allows | Component: `canApprove`/`canReject` require the same `cr_a_*` policy as the service's `isApprover` and the CR being in `PENDING_APPROVAL` (the only state with legal `APPROVED`/`REJECTED` transitions). The service still checks both. |
+| A user without an approve policy sees the CR but no enabled action | Component: both buttons rendered disabled, reason box hidden, and `approve()`/`reject()` return before calling the client. Backend: `FORBIDDEN` if a call gets through anyway. |
 | A rejection always has a reason | Component: disables Reject without a reason, backend `reject` throws `VALIDATION` error if there is no reason provided. |
 | Loaded CR stays coherent | Component: only replaced by a CR returned from the service; never updated optimistically; kept unchanged on a failed action; one action in flight at a time. |
 
@@ -97,12 +115,17 @@ client, or component). -->
     - Rejecting an already-`REJECTED` CR without a reason also fails with `VALIDATION` instead of quietly returning the CR.
 - **Repeated reject is an error, not a no-op:** the scaffold's `reject` silently returned an already-`REJECTED` CR unchanged, dropping the new reason without telling the caller. It now throws `VALIDATION` ("CR … is already rejected"), so the caller (and the UI's `actionError`) learns the action didn't happen. This also matches `approve`, which throws on an already-`APPROVED` CR. I chose `VALIDATION` over the generic `TERMINAL_STATE` so the message names the exact problem. Rejecting from any other state still goes through `assertTransition`: `APPROVED`/`DRAFT`/`SUBMITTED`/`RETURNED` → `ILLEGAL_TRANSITION`, `APPLIED`/`CANCELLED` → `TERMINAL_STATE`.
 - **Failed action = no change in the view:** on a failed approve/reject the UI keeps showing the last loaded CR and doesn't re-fetch it automatically. The user sees the error and can retry, or use the list to reload.
+- **Disabled with a reason, not hidden:** for a user who can't act, the actions are shown disabled with an explanation instead of being removed. A missing button looks like a bug, while a disabled one with a reason tells the user the action exists and why it's off. The reason box is hidden, since typing a reason for an action you can't take is noise.
+- **Permission is explained before status:** a user without an approve policy can't act on any CR, so they get the permission message even on a non-pending CR. Telling them about the status would suggest the action becomes available later.
+- **"Read-only" in the UI means "no approve policy":** this covers both the `cr_r_*`-only `viewer` and `alice` (create/update, no approve), matching what the service would allow.
+- **Switching user clears the selection instead of reloading it:** the new user may not be allowed to see the open CR (e.g. `bob` in `org-beta` would get `NOT_FOUND` for `CR-2`), so they start from their own list.
 
 ## 6. Where I used AI
 - Used AI to assist in understanding the project structure and flow.
 - Used AI to write the isReadOnlyPolicy function then inside  `CrDetailComponent` added checks in `canApprove` and `canReject` to apply changes to the UI based on the user's read-only status.
 - Used AI to assist in writing the approve/apply logic in the backend service.
 - Used AI for Task 3: spotting the permission gap in `canApprove`/`canReject` (non-read-only users without `cr_a_*`), writing `runAction()` for approve/reject, and adding the reject-reason check in the `cr-service`.
+- Used AI for Task 4: the actions-unavailable reason, the empty-timeline state, highlighting the selected CR in the list, and clearing the selection when switching user.
 
 ## 7. What I'd improve with more time
 -
