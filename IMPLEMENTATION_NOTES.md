@@ -94,6 +94,17 @@
         - Loaded: the "Acting as" switcher.
         - The list and detail panes render only once a session user is set (`*ngIf="show && session.user"`), since every call they make needs one.
 
+- Task 6 (tests):
+    - **Backend actions (`src/backend/cr-service.spec.ts`, new):**
+        - `approve`, `reject` and `apply`: the success case and each error (`FORBIDDEN`, `NOT_FOUND`, `ILLEGAL_TRANSITION`, `TERMINAL_STATE`, `VALIDATION`). After a failed action, the test checks the CR and the budget didn't change.
+        - Budget path: apply updates the budget, a balance that's too low gives `INSUFFICIENT_BUDGET`, a delta equal to the balance is allowed, a negative delta gives budget back, apply recalculates the totals, and a second apply doesn't charge the budget again.
+        - A full run from `DRAFT` to `APPLIED` checks there is one audit entry per action, in order.
+    - **Illegal transitions (`cr-state-machine.spec.ts`):** more illegal moves throw `ILLEGAL_TRANSITION`, and any move out of a terminal state throws `TERMINAL_STATE`.
+    - **API client (`src/integration/cr-api-client.spec.ts`, new):**
+        - Approve and reject go through the service, and the change is saved.
+        - Every failure comes back as a plain `{ code, message }`: a business error keeps the service's message, a network failure is `NETWORK`, and an unexpected error is `UNKNOWN` with a generic message.
+        - `listUsers()`: success, no users, an incomplete user, and a network failure.
+
 ## 2. Model of the flow (UI ↔ client ↔ service)
 <!-- How an approve/reject travels from the component through the API client into the service and repo,
 and back into the view. -->
@@ -170,4 +181,5 @@ client, or component). -->
 - Used AI for Task 5: the `listUsers()` client call and its error handling, loading the users in the app shell instead of from the seed, the users loading/error states, and the frontend CR types in `front.types.ts`.
 
 ## 7. What I'd improve with more time
--
+- **Tests for the UI components:** only the two provided detail-page tests and the list smoke test exist. I'd add tests for the detail page's Approve/Reject states for each user and CR status, the loading, saving and error states, and the required reject reason. I'd also test the app shell (loading users, switching user) and the list page.
+- **Tests for the full flow:** an approve clicked in the UI that goes through the client to the service and shows up on the detail and list pages, plus a check that the UI offers an action exactly when the service allows it.

@@ -17,4 +17,20 @@ describe('backend state machine', () => {
 	it('rejects moving out of a terminal state', () => {
 		expect(() => assertTransition(CrStatus.APPLIED, CrStatus.APPROVED)).toThrow();
 	});
+
+	it.each([
+		[CrStatus.DRAFT, CrStatus.APPROVED], // skips approval
+		[CrStatus.PENDING_APPROVAL, CrStatus.APPLIED], // applies before approval
+		[CrStatus.APPROVED, CrStatus.REJECTED], // rejects after approval
+		[CrStatus.APPROVED, CrStatus.PENDING_APPROVAL], // moves backwards
+		[CrStatus.PENDING_APPROVAL, CrStatus.PENDING_APPROVAL], // repeats a status
+	])('rejects %s -> %s with ILLEGAL_TRANSITION', (from, to) => {
+		expect(() => assertTransition(from, to)).toThrow(expect.objectContaining({ code: 'ILLEGAL_TRANSITION' }));
+	});
+
+	it.each([CrStatus.APPLIED, CrStatus.REJECTED, CrStatus.CANCELLED])('keeps %s immutable: any move raises TERMINAL_STATE', (from) => {
+		for (const to of Object.values(CrStatus)) {
+			expect(() => assertTransition(from, to)).toThrow(expect.objectContaining({ code: 'TERMINAL_STATE' }));
+		}
+	});
 });
