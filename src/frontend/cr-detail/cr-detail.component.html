@@ -18,14 +18,15 @@
 			<ol class="cr-timeline__list">
 				<li *ngFor="let entry of timeline" class="cr-timeline__entry">
 					<span class="cr-timeline__action">{{ entry.action }}</span>
-					<span class="cr-timeline__by">{{ entry.byUserId }}</span>
+					<span class="cr-timeline__by"> by {{ entry.byUserId }}</span>
 					<span *ngIf="entry.note" class="cr-timeline__note">{{ entry.note }}</span>
 				</li>
 			</ol>
 		</section>
 
-		<section class="cr-actions">
+		<section class="cr-actions" [attr.aria-busy]="submitting">
 			<p *ngIf="actionError" class="cr-actions__error" role="alert">{{ actionError }}</p>
+			<p *ngIf="submitting" class="cr-actions__submitting" role="status">Saving…</p>
 
 			<button type="button" class="cr-actions__approve" [disabled]="!canApprove || submitting" (click)="approve()">
 				Approve
@@ -34,7 +35,7 @@
 			<div class="cr-actions__reject" *ngIf="canReject">
 				<label>
 					Reason for rejection
-					<textarea class="cr-actions__reason" (input)="onReasonInput($any($event.target).value)"></textarea>
+					<textarea class="cr-actions__reason" [value]="rejectReason" [disabled]="submitting" (input)="onReasonInput($any($event.target).value)"></textarea>
 				</label>
 				<button type="button" class="cr-actions__reject-btn" [disabled]="!canReject || submitting || !rejectReason.trim()" (click)="reject()">
 					Reject

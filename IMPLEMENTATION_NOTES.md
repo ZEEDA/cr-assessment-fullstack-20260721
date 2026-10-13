@@ -16,6 +16,7 @@
 
     - **Fix UI Test failure:**
         - Added a read-only function `isReadOnlyPolicy` to `permissions.ts` and used it in the `CrDetailComponent` to determine if the current user had only read access first before checking the CR status at both `canApprove` and `canReject` functions to return false if the user is read-only make the approve button disabled and action reject section can be hidden.
+        - Refined in Task 3: the read-only check alone wasn't enough (see below).
 
 - Task 2 (backend, `cr-service.ts`):
     - **approve:**
@@ -29,6 +30,22 @@
         - Update cr totals and call transition to update (status, audit, version).
         - Update the assigned budget by adding the additional amount to booked and subtracting it from balance.
         - Finally, save the updated cr to the repository.
+
+- Task 3 (frontend detail UI, `cr-detail.component` + template):
+    - **canApprove / canReject (status + permissions):**
+        - The Task 1 check only blocked users holding *only* `cr_r_*` policies. A user like `alice` (`cr_c_u, cr_r_u, cr_u_u`) isn't read-only, so Approve was enabled for her, but the service rejects her with `FORBIDDEN` because she has no approve policy.
+        - Both getters now return `canApprovePolicy(user) && status === PENDING_APPROVAL`. `canApprovePolicy` checks for an approve policy (`cr_a_u | cr_a_w | cr_a_o`), the same rule the backend's `isApprover` applies to both `approve` and `reject`. `isReadOnlyPolicy` is now a private helper inside `permissions.ts`, called first by `canApprovePolicy`.
+        - The template already used both getters: Approve is disabled when `!canApprove`, and the whole reject section (reason + button) is hidden when `!canReject`.
+    - **approve / reject through `CrApiClient`:**
+        - Both go through one private `runAction()` helper:
+            - Returns early if the action isn't allowed or a request is already in flight (no double submit on a slow response).
+            - Sets `submitting = true` while the call is pending. The template disables Approve, Reject and the reason box, and shows a "Saving…" status.
+            - On success, the CR returned by the service replaces the loaded state, so (status, totals, timeline) and action buttons all come from the same response.
+            - On failure (business error or network error), the last loaded CR stays on screen and the error message is shown in `actionError` next to the actions. The user can retry.
+            - A late response is ignored if the component has moved to a different CR id in the meantime.
+    - **Reject requires a reason:**
+        - UI: the Reject button stays disabled until the trimmed reason is non-empty, and `reject()` checks it again before calling the client. The reason box is bound to `rejectReason` and cleared after a successful reject.
+        - Backend (`cr-service.ts`): `reject` now requires `note` and throws `Errors.validation(...)` for a missing or whitespace-only reason. This is the first check, before the CR lookup, the permission check or any change. The trimmed reason is stored on the audit entry. Callers that skip the UI can't reject without a reason either.
 
 ## 2. Model of the flow (UI ↔ client ↔ service)
 <!-- How an approve/reject travels from the component through the API client into the service and repo,
@@ -58,6 +75,9 @@ client, or component). -->
 | Budget never over-spent | Backend: `apply` rejects a positive delta greater than `balance` before any updates. |
 | Every successful action audited | Backend: `transition()` appends the audit entry and version. |
 | Approval recorded only on a successful approve | Backend: `approve` appends to `approvals` after the transition succeeds. |
+| UI only offers actions the service allows | Component: `canApprove`/`canReject` require the same `cr_a_*` policy as the service's `isApprover` and the CR being in `PENDING_APPROVAL` (the only state with legal `APPROVED`/`REJECTED` transitions). The service still checks both. |
+| A rejection always has a reason | Component: disables Reject without a reason, backend `reject` throws `VALIDATION` error if there is no reason provided. |
+| Loaded CR stays coherent | Component: only replaced by a CR returned from the service; never updated optimistically; kept unchanged on a failed action; one action in flight at a time. |
 
 ## 4. Testing strategy
 <!-- What you tested across the seam (backend + component/DOM) and why; what you skipped given the budget. -->
@@ -71,11 +91,18 @@ client, or component). -->
 - **Budget on apply:** `booked` is set to the CR's new total (`totals.newTotal`) and `balance -= delta`. A positive delta must fit in `balance` (equal is allowed); a negative delta releases budget.
 - **Cr status couldn't be repeated or go back in the workflow:** approving an already-`APPROVED` CR throws `ILLEGAL_TRANSITION` rather than silently returning, or attempting to return to a previous status throws the same error.
 - **Policy scope:** the last part of a policy (`_u`, `_w`, `_o`) is ignored. For example, `cr_a_u` and `cr_a_o` both let the user approve any CR in their org. This matches the existing `isApprover`/`isApplier` helpers.
+- **Reject permission:** rejecting needs an approve policy (`cr_a_*`), the same as the existing backend `reject`. There is no separate reject policy.
+- **Reject reason is checked first:** in `reject`, a missing or blank reason is checked before the CR lookup and the permission check (order: `VALIDATION` → `NOT_FOUND` → `FORBIDDEN` → transition). Consequences:
+    - A request without a reason fails with `VALIDATION` even when the CR doesn't exist, belongs to another org, or the user has no approve policy. It's a cheap input check that runs before the repo is touched, and it reveals nothing about the CR.
+    - Rejecting an already-`REJECTED` CR without a reason also fails with `VALIDATION` instead of quietly returning the CR.
+- **Repeated reject is an error, not a no-op:** the scaffold's `reject` silently returned an already-`REJECTED` CR unchanged, dropping the new reason without telling the caller. It now throws `VALIDATION` ("CR … is already rejected"), so the caller (and the UI's `actionError`) learns the action didn't happen. This also matches `approve`, which throws on an already-`APPROVED` CR. I chose `VALIDATION` over the generic `TERMINAL_STATE` so the message names the exact problem. Rejecting from any other state still goes through `assertTransition`: `APPROVED`/`DRAFT`/`SUBMITTED`/`RETURNED` → `ILLEGAL_TRANSITION`, `APPLIED`/`CANCELLED` → `TERMINAL_STATE`.
+- **Failed action = no change in the view:** on a failed approve/reject the UI keeps showing the last loaded CR and doesn't re-fetch it automatically. The user sees the error and can retry, or use the list to reload.
 
 ## 6. Where I used AI
 - Used AI to assist in understanding the project structure and flow.
 - Used AI to write the isReadOnlyPolicy function then inside  `CrDetailComponent` added checks in `canApprove` and `canReject` to apply changes to the UI based on the user's read-only status.
 - Used AI to assist in writing the approve/apply logic in the backend service.
+- Used AI for Task 3: spotting the permission gap in `canApprove`/`canReject` (non-read-only users without `cr_a_*`), writing `runAction()` for approve/reject, and adding the reject-reason check in the `cr-service`.
 
 ## 7. What I'd improve with more time
 -

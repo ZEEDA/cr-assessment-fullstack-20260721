@@ -68,11 +68,15 @@ export class CrService {
 		return this.repo.save(cr);
 	}
 
-	reject(user: ReqUser, id: string, at: string, note?: string): ChangeRequest {
+	reject(user: ReqUser, id: string, at: string, note: string): ChangeRequest {
+		// A reject request must carry a reason.
+		if (!note?.trim()) throw Errors.validation('A reason is required to reject a change request');
+
 		const cr = this.getOrThrow(user, id);
 		if (!this.isApprover(user)) throw Errors.forbidden('Cannot reject');
-		if (cr.status === CrStatus.REJECTED) return cr;
-		this.transition(cr, CrStatus.REJECTED, CrAction.REJECT, user.id, at, note);
+		// Rejecting twice is a caller error, not a no-op: fail loudly instead of returning the CR unchanged.
+		if (cr.status === CrStatus.REJECTED) throw Errors.validation(`CR ${id} is already rejected`);
+		this.transition(cr, CrStatus.REJECTED, CrAction.REJECT, user.id, at, note?.trim());
 		return this.repo.save(cr);
 	}
 

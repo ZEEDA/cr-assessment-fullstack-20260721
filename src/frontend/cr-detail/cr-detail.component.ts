@@ -4,7 +4,7 @@ import { CrApiClient } from '../../integration/cr-api-client';
 import { SessionService } from '../../session/session.service';
 import { ChangeRequest, TimelineEntry } from '../../backend/cr.types';
 import { idle, loading, ViewState } from '../view-state';
-import { isReadOnlyPolicy } from '../permissions';
+import { canApprovePolicy } from '../permissions';
 
 /**
  * Change Request DETAIL page: loads a CR via the API client and renders its status, totals, timeline,
@@ -55,30 +55,58 @@ export class CrDetailComponent implements OnInit {
 		this.rejectReason = value;
 	}
 
-	/** Whether the current user may approve the loaded CR. */
-	get canApprove(): boolean {
-		// NOTE: this only looks at status. The UI must also respect the user's permissions.
-		
-		// check whether the current user only has read access.
-		if (isReadOnlyPolicy(this.session.user)) return false;
-
-		return this.detail?.status === 'PENDING_APPROVAL';
+	// Approve/Reject are only legal while the CR status is PENDING_APPROVAL
+	private hasPendingApproval(status: string): boolean {
+		return status === 'PENDING_APPROVAL';
 	}
 
+	// check whether the current user has approve policy (`cr_a_*`) AND a PENDING_APPROVAL CR status  (respect both status and permission).
+	get canApprove(): boolean {
+		return canApprovePolicy(this.session.user) && this.hasPendingApproval(this.detail?.status ?? '');
+	}
+
+	// check whether the current user has approve policy (`cr_a_*`) AND a PENDING_APPROVAL CR status (respect both status and permission).
 	get canReject(): boolean {
-		// check whether the current user only has read access.
-		if (isReadOnlyPolicy(this.session.user)) return false;
-		return this.detail?.status === 'PENDING_APPROVAL';
+		return canApprovePolicy(this.session.user) && this.hasPendingApproval(this.detail?.status ?? '');
 	}
 
 	async approve(): Promise<void> {
-		// TODO: perform the approve action through the client and reflect the outcome in the view.
-		throw new Error('approve() not implemented');
+		if (!this.canApprove || this.submitting) return;
+		await this.runAction(() => this.client.approve(this.session.user, this.id, new Date().toISOString()));
 	}
 
 	async reject(): Promise<void> {
-		// TODO: require a reason, then perform the reject action through the client and reflect the
-		//       outcome in the view.
-		throw new Error('reject() not implemented');
+		if (!this.canReject || this.submitting) return;
+		const reason = this.rejectReason.trim();
+		if (!reason) {
+			this.actionError = 'A reason is required to reject this change request.';
+			return;
+		}
+		const ok = await this.runAction(() => this.client.reject(this.session.user, this.id, new Date().toISOString(), reason));
+		if (ok) this.rejectReason = '';
+	}
+
+	/**
+	 * Runs one approve/reject call through the client. 
+	 * - While it is in flight `submitting` disables the actions (no double submits on a slow response). 
+	 * - On success the CR returned by the service replaces the current one, so (status, totals and timeline) all updated and come from the same response. 
+	 * - On failure the last loaded CR stays on screen and the error is shown next to the actions.
+	 */
+	private async runAction(call: () => Promise<ChangeRequest>): Promise<boolean> {
+		const id = this.id;
+		this.submitting = true;
+		this.actionError = undefined;
+		try {
+			const updated = await call();
+			// Ignore a late response if the user selects a different CR.
+			if (id !== this.id) return false;
+			this.state = { status: 'loaded', data: updated };
+			return true;
+		} catch (err) {
+			if (id === this.id) this.actionError = (err as Error).message;
+			return false;
+		} finally {
+			this.submitting = false;
+		}
 	}
 }
