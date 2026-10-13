@@ -15,7 +15,7 @@
 			<tr><th>ID</th><th>Title</th><th>Status</th></tr>
 		</thead>
 		<tbody>
-			<tr *ngFor="let cr of rows" class="cr-list__row" (click)="select.emit(cr.id)">
+			<tr *ngFor="let cr of rows" class="cr-list__row" [attr.aria-current]="cr.id === selectedId ? 'true' : null" (click)="select.emit(cr.id)">
 				<td>{{ cr.id }}</td>
 				<td>{{ cr.title }}</td>
 				<td><span class="cr-status" [attr.data-status]="cr.status">{{ cr.status }}</span></td>

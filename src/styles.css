@@ -20,6 +20,17 @@ body {
 	padding: 1.25rem;
 	align-items: start;
 }
+/* Centred against the list column (overrides the grid's align-items: start). */
+.app-no-selection {
+	align-self: center;
+	margin: 0;
+	padding: 2rem 1rem;
+	text-align: center;
+	color: #666;
+	background: #fafbfc;
+	border: 1px dashed #ccc;
+	border-radius: 6px;
+}
 table {
 	border-collapse: collapse;
 	width: 100%;
@@ -30,11 +41,22 @@ td {
 	padding: 0.4rem 0.6rem;
 	border-bottom: 1px solid #eee;
 }
+.cr-list h2, .cr-detail__header h2{
+	margin-top: 0;
+}
 .cr-list__row {
 	cursor: pointer;
 }
 .cr-list__row:hover {
 	background: #f0f6ff;
+}
+/* After :hover (same specificity) so the selected row keeps its highlight under the pointer. */
+.cr-list__row[aria-current='true'] {
+	background: #e1ecff;
+	font-weight: 600;
+}
+.cr-list__row[aria-current='true'] td:first-child {
+	box-shadow: inset 3px 0 0 #1a73e8;
 }
 button {
 	padding: 0.4rem 0.8rem;
@@ -44,8 +66,16 @@ button:disabled {
 	cursor: not-allowed;
 }
 [role='alert'] {
+	background-color: #fdecea;
 	color: #b00020;
+	padding: 1px 4px;
 }
+[role='info'] {
+	background-color: #fdfcea;
+	color: #736d00;
+	padding: 1px 4px;
+}
+
 .cr-diff__row[data-kind='changed'] {
 	background: #fff6e5;
 }
@@ -54,4 +84,26 @@ button:disabled {
 }
 .cr-diff__row[data-kind='removed'] {
 	background: #fdecea;
+}
+
+.cr-actions{
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	padding: 16px 0;
+	gap: 0.5rem;
+	border-top: 1px solid #eee;
+}
+.cr-actions__reject{
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	padding: 16px 0;
+	gap: 0.5rem;
+}
+.cr-actions__reject label{
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.5rem;
 }

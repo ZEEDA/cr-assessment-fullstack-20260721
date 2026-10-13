@@ -29,6 +29,8 @@ export class AppComponent {
 
 	switchUser(key: string): void {
 		this.session.user = users[key];
+		// Drop the open CR: the new user may not be able to see it (e.g. another org) and should pick from their own list.
+		this.selectedId = null;
 		this.reload();
 	}
 
